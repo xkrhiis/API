@@ -3,6 +3,31 @@ CREATE DATABASE IF NOT EXISTS floricoop
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE floricoop;
 
+-- Tabla de usuarios del sistema
+CREATE TABLE IF NOT EXISTS usuarios (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(60) NOT NULL UNIQUE,
+  password VARCHAR(120) NOT NULL,
+  rol ENUM('admin','user') NOT NULL DEFAULT 'user',
+  creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+USE floricoop;
+
+CREATE TABLE IF NOT EXISTS registros_inventario (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  lote VARCHAR(50) NOT NULL,
+  producto_id INT NOT NULL,
+  precio DECIMAL(10,2) NOT NULL,
+  stock INT NOT NULL,
+  usuario_id INT NOT NULL,
+  FOREIGN KEY (producto_id) REFERENCES productos(id),
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+) ENGINE=InnoDB;
+
+
+
 -- Tablas
 CREATE TABLE IF NOT EXISTS productos (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -54,6 +79,20 @@ SELECT p.id AS pedido_id, c.nombre AS cliente, p.fecha, p.estado, p.total
 FROM pedidos p
 JOIN clientes c ON c.id = p.cliente_id;
 
+-- Usuario administrador por defecto
+INSERT INTO usuarios (username, password, rol) VALUES
+('admin', 'admin', 'admin')
+ON DUPLICATE KEY UPDATE
+  password = VALUES(password),
+  rol      = VALUES(rol);
+
+-- Usuario "user" de ejemplo
+INSERT INTO usuarios (username, password, rol) VALUES
+('user', 'user', 'user')
+ON DUPLICATE KEY UPDATE
+  password = VALUES(password),
+  rol      = VALUES(rol);
+
 -- Semillas
 INSERT INTO productos (nombre, precio, stock, activo) VALUES
 ('Rosa bouquet', 3500.00, 50, 1),
@@ -92,3 +131,7 @@ CREATE INDEX idx_clientes_email ON clientes(email);
 CREATE INDEX idx_pedidos_cliente ON pedidos(cliente_id);
 CREATE INDEX idx_items_pedido ON pedido_items(pedido_id);
 CREATE INDEX idx_items_producto ON pedido_items(producto_id);
+
+ALTER TABLE registros_inventario
+  ADD COLUMN tipo_movimiento ENUM('ENTRADA','SALIDA','MERMA','AJUSTE') NOT NULL DEFAULT 'ENTRADA',
+  ADD COLUMN motivo_merma VARCHAR(255) NULL;

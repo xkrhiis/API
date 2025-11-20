@@ -5,45 +5,66 @@ const http = require('http');
 const cors = require('cors');
 const morgan = require('morgan');
 
+// Routers de la API
 const productosRouter = require('./routes/productos.routes');
+const usuariosRouter = require('./routes/usuarios.routes');
+const registrosRouter = require('./routes/registros.routes');
+const mermasRouter = require('./routes/mermas.routes'); // 🔹 NUEVO
 
 const APP_PORT = Number(process.env.APP_PORT || 3000);
 
-async function initServer() {
+function initServer() {
   const app = express();
 
-  // Middlewares
+  // Middlewares globales
   app.use(cors());
   app.use(express.json());
   app.use(morgan('dev'));
 
-  // 3) Endpoints de salud  (debe ir antes del 404)
-app.get('/health/db', async (_req, res) => {
-  try {
-    const [rows] = await db.query('SELECT 1 AS ok');
-    return res.json({ db: rows?.[0]?.ok === 1 });
-  } catch (e) {
-    return res.status(500).json({ db: false, error: e.message });
-  }
-});
+  // Ruta raíz (para ver algo en http://localhost:3000)
+  app.get('/', (_req, res) => {
+    res.json({
+      ok: true,
+      message: 'API Floricoop funcionando',
+    });
+  });
 
-// ...luego montas las rutas de negocio...
-app.use('/api/productos', productosRouter);
+  // 🔹 Rutas de negocio
+  app.use('/api/productos', productosRouter);
+  app.use('/api/usuarios', usuariosRouter);
+  app.use('/api/registros', registrosRouter);
+  app.use('/api/mermas', mermasRouter); // <-- ruta de mermas
 
-// 404 y manejo de errores al final
-app.use((_req, res) => res.status(404).json({ error: 'No encontrado' }));
+  // 404 - cualquier ruta que no exista (debe ir después de las rutas)
+  app.use((_req, res) => {
+    return res.status(404).json({ error: 'No encontrado' });
+  });
 
-  // Errores
+  // Middleware de manejo de errores (debe ir al final)
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {
     console.error(err);
-    res.status(err.status || 500).json({ error: err.message || 'Error interno' });
+    res
+      .status(err.status || 500)
+      .json({ error: err.message || 'Error interno' });
   });
 
   const server = http.createServer(app);
+
   server.listen(APP_PORT, () => {
     console.log(`✅ API levantada: http://localhost:${APP_PORT}`);
-    console.log(`➡️  Productos:   GET http://localhost:${APP_PORT}/api/productos`);
+    console.log(
+      `➡️  Productos: GET http://localhost:${APP_PORT}/api/productos`
+    );
+    console.log(
+      `➡️  Usuarios : GET http://localhost:${APP_PORT}/api/usuarios`
+    );
+    console.log(
+      `➡️  Registros: GET http://localhost:${APP_PORT}/api/registros`
+    );
+    console.log(
+      `➡️  Mermas   : GET http://localhost:${APP_PORT}/api/mermas`
+    );
   });
 }
 
