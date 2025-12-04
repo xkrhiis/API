@@ -3,6 +3,15 @@ const express = require('express');
 const router = express.Router();
 const usuariosService = require('../services/usuarios.service');
 
+function parseId(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'ID inválido' });
+    return null;
+  }
+  return id;
+}
+
 router.get('/', async (_req, res, next) => {
   try {
     const rows = await usuariosService.getAll();
@@ -14,8 +23,12 @@ router.get('/', async (_req, res, next) => {
 
 router.get('/:id', async (req, res, next) => {
   try {
-    const item = await usuariosService.getById(req.params.id);
+    const id = parseId(req, res);
+    if (!id) return;
+
+    const item = await usuariosService.getById(id);
     if (!item) return res.status(404).json({ error: 'No encontrado' });
+
     res.json(item);
   } catch (e) {
     next(e);
@@ -33,8 +46,13 @@ router.post('/', async (req, res, next) => {
 
 router.patch('/:id', async (req, res, next) => {
   try {
-    const ok = await usuariosService.update(req.params.id, req.body);
-    res.json({ updated: !!ok });
+    const id = parseId(req, res);
+    if (!id) return;
+
+    const ok = await usuariosService.update(id, req.body);
+    if (!ok) return res.status(404).json({ error: 'No encontrado' });
+
+    res.json({ updated: true });
   } catch (e) {
     next(e);
   }
@@ -42,8 +60,13 @@ router.patch('/:id', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
-    const ok = await usuariosService.remove(req.params.id);
-    res.json({ deleted: !!ok });
+    const id = parseId(req, res);
+    if (!id) return;
+
+    const ok = await usuariosService.remove(id);
+    if (!ok) return res.status(404).json({ error: 'No encontrado' });
+
+    res.json({ deleted: true });
   } catch (e) {
     next(e);
   }

@@ -3,11 +3,15 @@ const express = require('express');
 const router = express.Router();
 const productosService = require('../services/productos.service');
 
-// Por compatibilidad: usar getById si existe, si no usar get
-const getProductoById =
-  productosService.getById || productosService.get;
+function parseId(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'ID inválido' });
+    return null;
+  }
+  return id;
+}
 
-// GET /api/productos
 router.get('/', async (_req, res, next) => {
   try {
     const rows = await productosService.list();
@@ -17,18 +21,13 @@ router.get('/', async (_req, res, next) => {
   }
 });
 
-// GET /api/productos/:id
 router.get('/:id', async (req, res, next) => {
   try {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
+    const id = parseId(req, res);
+    if (!id) return;
 
-    const prod = await getProductoById(id);
-    if (!prod) {
-      return res.status(404).json({ error: 'Producto no encontrado' });
-    }
+    const prod = await productosService.getById(id);
+    if (!prod) return res.status(404).json({ error: 'Producto no encontrado' });
 
     res.json(prod);
   } catch (e) {
@@ -36,7 +35,6 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// POST /api/productos
 router.post('/', async (req, res, next) => {
   try {
     const id = await productosService.create(req.body);
@@ -46,41 +44,27 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// PATCH /api/productos/:id  ← NECESARIO PARA EDITAR
 router.patch('/:id', async (req, res, next) => {
   try {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
+    const id = parseId(req, res);
+    if (!id) return;
 
-    // debe devolver true si actualizó al menos 1 fila
     const updated = await productosService.update(id, req.body);
+    if (!updated) return res.status(404).json({ error: 'Producto no encontrado' });
 
-    if (!updated) {
-      return res.status(404).json({ error: 'Producto no encontrado' });
-    }
-
-    // El front no usa el cuerpo, pero por claridad devolvemos esto
     res.json({ updated: true });
   } catch (e) {
     next(e);
   }
 });
 
-// DELETE /api/productos/:id
 router.delete('/:id', async (req, res, next) => {
   try {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
+    const id = parseId(req, res);
+    if (!id) return;
 
     const deleted = await productosService.remove(id);
-
-    if (!deleted) {
-      return res.status(404).json({ error: 'Producto no encontrado' });
-    }
+    if (!deleted) return res.status(404).json({ error: 'Producto no encontrado' });
 
     res.json({ deleted: true });
   } catch (e) {

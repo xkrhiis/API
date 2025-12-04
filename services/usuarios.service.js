@@ -1,11 +1,40 @@
 // services/usuarios.service.js
 const { pool } = require('./db.service');
 
-// OJO: aquí usamos "rol" y "creado_en" pero los exponemos como "role" y "created_at"
+function httpError(status, message) {
+  const e = new Error(message);
+  e.status = status;
+  return e;
+}
+
 const BASE_SELECT =
   'SELECT id, username, rol AS role, creado_en AS created_at FROM usuarios';
 
-// =============== FUNCIONES INTERNAS ===============
+function normalizeUserInput(data = {}, { partial = false } = {}) {
+  const out = {};
+
+  if (!partial || data.username !== undefined) {
+    const username = String(data.username ?? '').trim();
+    if (!username) throw httpError(400, 'username es requerido');
+    if (username.length > 50) throw httpError(400, 'username demasiado largo');
+    out.username = username;
+  }
+
+  if (!partial || data.password !== undefined) {
+    const password = String(data.password ?? '').trim();
+    if (!password) throw httpError(400, 'password es requerido');
+    if (password.length > 200) throw httpError(400, 'password demasiado largo');
+    out.password = password;
+  }
+
+  if (!partial || data.role !== undefined || data.rol !== undefined) {
+    const roleRaw = String(data.role ?? data.rol ?? 'user').trim();
+    const allowed = new Set(['admin', 'user']);
+    out.role = allowed.has(roleRaw) ? roleRaw : 'user';
+  }
+
+  return out;
+}
 
 // Devuelve todos los usuarios
 async function list() {
@@ -19,40 +48,43 @@ async function get(id) {
   return rows[0] || null;
 }
 
-// data: { username, password, role }
-async function create({ username, password, role = 'user' }) {
-  // En la tabla la columna es "rol"
+// Crear usuario
+async function create(data) {
+  const u = normalizeUserInput(data, { partial: false });
+
   const [result] = await pool.query(
     'INSERT INTO usuarios (username, password, rol) VALUES (?, ?, ?)',
-    [username, password, role]
+    [u.username, u.password, u.role]
   );
-  // devolvemos el id del nuevo usuario
+
   return result.insertId;
 }
 
-// data puede traer solo algunos campos: username, password, role
+// Actualizar usuario
 async function update(id, data) {
+  const u = normalizeUserInput(data, { partial: true });
+
   const sets = [];
   const vals = [];
 
-  if (data.username !== undefined) {
+  if (u.username !== undefined) {
     sets.push('username = ?');
-    vals.push(data.username);
+    vals.push(u.username);
   }
-  if (data.password !== undefined) {
+
+  if (u.password !== undefined) {
     sets.push('password = ?');
-    vals.push(data.password);
+    vals.push(u.password);
   }
-  if (data.role !== undefined) {
-    // En BD es "rol"
+
+  if (u.role !== undefined) {
     sets.push('rol = ?');
-    vals.push(data.role);
+    vals.push(u.role);
   }
 
-  // Si no hay nada que actualizar
-  if (!sets.length) return false;
+  if (!sets.length) throw httpError(400, 'No hay campos para actualizar');
 
-  vals.push(id);
+  vals.push(Number(id));
 
   const [result] = await pool.query(
     `UPDATE usuarios SET ${sets.join(', ')} WHERE id = ?`,
@@ -63,33 +95,25 @@ async function update(id, data) {
 }
 
 async function remove(id) {
-  const [result] = await pool.query(
-    'DELETE FROM usuarios WHERE id = ?',
-    [id]
-  );
+  const [result] = await pool.query('DELETE FROM usuarios WHERE id = ?', [id]);
   return result.affectedRows > 0;
 }
 
-// =============== ALIAS QUE ESPERAN LAS RUTAS ===============
-
-// Las rutas llaman a getAll y getById, así que creamos alias
+// Alias que esperan las rutas
 async function getAll() {
   return list();
 }
 
 async function getById(id) {
-  return get(id);
+  return get(Number(id));
 }
 
-// Exportamos TODO con los nombres que usan las rutas
 module.exports = {
-  // nombres originales
   list,
   get,
   create,
   update,
   remove,
-  // alias usados en routes/usuarios.routes.js
   getAll,
   getById,
 };

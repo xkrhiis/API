@@ -1,22 +1,86 @@
 // services/productos.service.js
 const { pool } = require('./db.service');
 
+// Helpers
+function httpError(status, message) {
+  const e = new Error(message);
+  e.status = status;
+  return e;
+}
+
+function toIntOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isInteger(n) ? n : null;
+}
+
+function toNumberOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeProductoInput(data = {}, { partial = false } = {}) {
+  const out = {};
+
+  if (!partial || data.nombre !== undefined) {
+    const nombre = String(data.nombre ?? '').trim();
+    if (!nombre) throw httpError(400, 'nombre es requerido');
+    out.nombre = nombre;
+  }
+
+  if (!partial || data.lote !== undefined) {
+    out.lote = data.lote ? String(data.lote).trim() : null;
+  }
+
+  if (!partial || data.color !== undefined) {
+    out.color = data.color ? String(data.color).trim() : null;
+  }
+
+  if (!partial || data.fecha_ingreso !== undefined) {
+    out.fecha_ingreso = data.fecha_ingreso || null; // ideal validar ISO
+  }
+
+  if (!partial || data.fecha_limite !== undefined) {
+    out.fecha_limite = data.fecha_limite || null;
+  }
+
+  if (!partial || data.precio !== undefined) {
+    const precio = toNumberOrNull(data.precio);
+    if (precio === null || precio < 0) throw httpError(400, 'precio inválido');
+    out.precio = precio;
+  }
+
+  if (!partial || data.stock !== undefined) {
+    const stock = toIntOrNull(data.stock);
+    if (data.stock !== null && data.stock !== undefined && data.stock !== '' && stock === null)
+      throw httpError(400, 'stock inválido');
+    out.stock = stock;
+  }
+
+  if (!partial || data.min !== undefined) {
+    const min = toIntOrNull(data.min);
+    if (data.min !== null && data.min !== undefined && data.min !== '' && min === null)
+      throw httpError(400, 'min inválido');
+    out.min = min ?? 0;
+  }
+
+  if (!partial || data.activo !== undefined) {
+    out.activo = (data.activo === 0 || data.activo === false || data.activo === '0') ? 0 : 1;
+  } else if (!partial) {
+    out.activo = 1;
+  }
+
+  return out;
+}
+
 // Obtener solo productos activos
 async function list() {
   const [rows] = await pool.query(
     `
     SELECT
-      id,
-      nombre,
-      lote,
-      color,
-      fecha_ingreso,
-      fecha_limite,
-      precio,
-      stock,
-      min,
-      activo,
-      creado_en
+      id, nombre, lote, color, fecha_ingreso, fecha_limite,
+      precio, stock, min, activo, creado_en
     FROM productos
     WHERE activo = 1
     ORDER BY id
@@ -30,17 +94,8 @@ async function getById(id) {
   const [rows] = await pool.query(
     `
     SELECT
-      id,
-      nombre,
-      lote,
-      color,
-      fecha_ingreso,
-      fecha_limite,
-      precio,
-      stock,
-      min,
-      activo,
-      creado_en
+      id, nombre, lote, color, fecha_ingreso, fecha_limite,
+      precio, stock, min, activo, creado_en
     FROM productos
     WHERE id = ?
     `,
@@ -51,20 +106,7 @@ async function getById(id) {
 
 // Crear producto
 async function create(data) {
-  const {
-    nombre,
-    lote,
-    color,
-    fecha_ingreso,
-    fecha_limite,
-    precio,
-    stock,
-    min,
-    activo,
-  } = data;
-
-  // si no viene "activo" desde el front, lo damos por activo (1)
-  const activoFlag = (activo === 0 || activo === false) ? 0 : 1;
+  const p = normalizeProductoInput(data, { partial: false });
 
   const [result] = await pool.query(
     `
@@ -73,96 +115,62 @@ async function create(data) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
-      nombre,
-      lote || null,
-      color || null,
-      fecha_ingreso,
-      fecha_limite || null,
-      precio,
-      stock,
-      min ?? 0,
-      activoFlag,
+      p.nombre,
+      p.lote ?? null,
+      p.color ?? null,
+      p.fecha_ingreso ?? null,
+      p.fecha_limite ?? null,
+      p.precio,
+      p.stock ?? null,
+      p.min ?? 0,
+      p.activo ?? 1,
     ]
   );
 
   return result.insertId;
 }
 
-// Actualizar producto (para PATCH /api/productos/:id)
+// Actualizar producto (PATCH)
 async function update(id, data) {
-  const {
-    nombre,
-    lote,
-    color,
-    fecha_ingreso,
-    fecha_limite,
-    precio,
-    stock,
-    min,
-    activo,
-  } = data;
+  const p = normalizeProductoInput(data, { partial: true });
 
-  const activoFlag = (activo === 0 || activo === false) ? 0 : 1;
+  // No permitir PATCH vacío
+  const keys = Object.keys(p);
+  if (keys.length === 0) throw httpError(400, 'No hay campos para actualizar');
+
+  // ✅ SET dinámico seguro (valores parametrizados)
+  const sets = [];
+  const vals = [];
+
+  for (const k of keys) {
+    // whitelist de campos actualizables
+    if (!['nombre','lote','color','fecha_ingreso','fecha_limite','precio','stock','min','activo'].includes(k)) continue;
+    sets.push(`${k} = ?`);
+    vals.push(p[k]);
+  }
+
+  if (sets.length === 0) throw httpError(400, 'No hay campos válidos para actualizar');
+
+  vals.push(id);
 
   const [result] = await pool.query(
-    `
-    UPDATE productos
-    SET
-      nombre        = ?,
-      lote          = ?,
-      color         = ?,
-      fecha_ingreso = ?,
-      fecha_limite  = ?,
-      precio        = ?,
-      stock         = ?,
-      min           = ?,
-      activo        = ?
-    WHERE id = ?
-    `,
-    [
-      nombre,
-      lote || null,
-      color || null,
-      fecha_ingreso,
-      fecha_limite || null,
-      precio,
-      stock,
-      min ?? 0,
-      activoFlag,
-      id,
-    ]
+    `UPDATE productos SET ${sets.join(', ')} WHERE id = ?`,
+    vals
   );
 
-  // true si se actualizó al menos 1 fila
   return result.affectedRows > 0;
 }
 
 /**
  * Eliminar producto:
- *  - Borra primero los registros de historial (registros_inventario)
- *  - Luego borra el producto de la tabla productos
- * Devuelve cantidad de filas afectadas en productos.
+ *  - Borra primero registros_inventario (historial)
+ *  - Luego borra el producto
  */
 async function remove(id) {
-  // 1) Borrar historial de ese producto
-  await pool.query(
-    `DELETE FROM registros_inventario WHERE producto_id = ?`,
-    [id]
-  );
+  await pool.query(`DELETE FROM registros_inventario WHERE producto_id = ?`, [id]);
 
-  // 2) Borrar el producto
-  const [result] = await pool.query(
-    `DELETE FROM productos WHERE id = ?`,
-    [id]
-  );
-
+  const [result] = await pool.query(`DELETE FROM productos WHERE id = ?`, [id]);
   return result.affectedRows; // 0 si no existía, 1 si se borró
 }
 
-module.exports = {
-  list,
-  getById,
-  create,
-  update,   // <-- importante exportar
-  remove,
-};
+module.exports = { list, getById, create, update, remove };
